@@ -1,23 +1,23 @@
 package servicemonitor_test
 
 import (
-	"github.com/golang/mock/gomock"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
-
 	"context"
 
-	// tested package
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+	"go.uber.org/mock/gomock"
 
 	"github.com/openshift/route-monitor-operator/api/v1alpha1"
 	consterror "github.com/openshift/route-monitor-operator/pkg/consts/test/error"
-	constinit "github.com/openshift/route-monitor-operator/pkg/consts/test/init"
 	"github.com/openshift/route-monitor-operator/pkg/servicemonitor"
 
 	clientmocks "github.com/openshift/route-monitor-operator/pkg/util/test/generated/mocks/client"
 	utilmock "github.com/openshift/route-monitor-operator/pkg/util/test/generated/mocks/reconcile"
 	testhelper "github.com/openshift/route-monitor-operator/pkg/util/test/helper"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	rhobsv1 "github.com/rhobs/obo-prometheus-operator/pkg/apis/monitoring/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 type ResourceComparerMockHelper struct {
@@ -27,7 +27,6 @@ type ResourceComparerMockHelper struct {
 
 var _ = Describe("CR Deployment Handling", func() {
 	var (
-		ctx                  context.Context
 		mockClient           *clientmocks.MockClient
 		mockCtrl             *gomock.Controller
 		mockResourceComparer *utilmock.MockResourceComparerInterface
@@ -44,7 +43,6 @@ var _ = Describe("CR Deployment Handling", func() {
 		err               error
 	)
 	BeforeEach(func() {
-		ctx = constinit.Context
 		mockCtrl = gomock.NewController(GinkgoT())
 		mockClient = clientmocks.NewMockClient(mockCtrl)
 		mockResourceComparer = utilmock.NewMockResourceComparerInterface(mockCtrl)
@@ -60,7 +58,7 @@ var _ = Describe("CR Deployment Handling", func() {
 
 		sm = servicemonitor.ServiceMonitor{
 			Client:   mockClient,
-			Ctx:      ctx,
+			Ctx:      context.Background(),
 			Comparer: mockResourceComparer,
 		}
 	})
@@ -99,10 +97,10 @@ var _ = Describe("CR Deployment Handling", func() {
 		})
 		When("The Client failed to fetch existing deployments", func() {
 			BeforeEach(func() {
-				get.ErrorResponse = consterror.CustomError
+				get.ErrorResponse = consterror.ErrCustomError
 			})
 			It("should return the received error", func() {
-				Expect(err).To(Equal(consterror.CustomError))
+				Expect(err).To(Equal(consterror.ErrCustomError))
 			})
 		})
 		Describe("No ServiceMonitor has been deployed yet", func() {
@@ -115,10 +113,10 @@ var _ = Describe("CR Deployment Handling", func() {
 			})
 			When("an error appeared during the creation", func() {
 				BeforeEach(func() {
-					create.ErrorResponse = consterror.CustomError
+					create.ErrorResponse = consterror.ErrCustomError
 				})
 				It("returns the received error", func() {
-					Expect(err).To(Equal(consterror.CustomError))
+					Expect(err).To(Equal(consterror.ErrCustomError))
 				})
 			})
 		})
@@ -136,10 +134,10 @@ var _ = Describe("CR Deployment Handling", func() {
 				})
 				When("The Client failed to update the existing deployments", func() {
 					BeforeEach(func() {
-						update.ErrorResponse = consterror.CustomError
+						update.ErrorResponse = consterror.ErrCustomError
 					})
 					It("should return the received error", func() {
-						Expect(err).To(Equal(consterror.CustomError))
+						Expect(err).To(Equal(consterror.ErrCustomError))
 					})
 				})
 			})
@@ -155,7 +153,7 @@ var _ = Describe("CR Deployment Handling", func() {
 	})
 	Describe("DeleteServiceMonitorDeployment", func() {
 		JustBeforeEach(func() {
-			err = sm.DeleteServiceMonitorDeployment(serviceMonitorRef)
+			err = sm.DeleteServiceMonitorDeployment(serviceMonitorRef, false)
 		})
 		When("The ServiceMonitorRef is not set", func() {
 			BeforeEach(func() {
@@ -172,10 +170,10 @@ var _ = Describe("CR Deployment Handling", func() {
 			})
 			When("the client failed to fetch the deployment", func() {
 				BeforeEach(func() {
-					get.ErrorResponse = consterror.CustomError
+					get.ErrorResponse = consterror.ErrCustomError
 				})
 				It("returns the received error", func() {
-					Expect(err).To(Equal(consterror.CustomError))
+					Expect(err).To(Equal(consterror.ErrCustomError))
 				})
 			})
 			When("the ServiceMonitorDeployment doesnt exist", func() {
@@ -195,13 +193,176 @@ var _ = Describe("CR Deployment Handling", func() {
 				})
 				When("the client failed to delete the deployment", func() {
 					BeforeEach(func() {
-						delete.ErrorResponse = consterror.CustomError
+						delete.ErrorResponse = consterror.ErrCustomError
 					})
 					It("returns the received error", func() {
-						Expect(err).To(Equal(consterror.CustomError))
+						Expect(err).To(Equal(consterror.ErrCustomError))
 					})
 				})
 			})
+		})
+	})
+
+	Describe("NewServiceMonitor", func() {
+		It("should create a ServiceMonitor with correct properties", func() {
+			sm := servicemonitor.NewServiceMonitor(context.Background(), mockClient)
+			Expect(sm.Client).To(Equal(mockClient))
+			Expect(sm.Comparer).NotTo(BeNil())
+		})
+	})
+
+	Describe("TemplateAndUpdateServiceMonitorDeployment", func() {
+		var (
+			routeURL                  = "https://example.com"
+			blackBoxExporterNamespace = "test-namespace"
+			namespacedName            = serviceMonitorRef
+			clusterID                 = "test-cluster"
+			isHCPMonitor              = false
+			useInsecure               = false
+			owner                     *metav1.OwnerReference
+		)
+
+		BeforeEach(func() {
+			namespacedName = v1alpha1.NamespacedName{Name: "test", Namespace: "test"}
+			owner = &metav1.OwnerReference{
+				APIVersion: "v1",
+				Kind:       "Test",
+				Name:       "test-owner",
+			}
+		})
+
+		When("isHCPMonitor is false", func() {
+			BeforeEach(func() {
+				get.CalledTimes = 1
+				get.ErrorResponse = consterror.NotFoundErr
+				create.CalledTimes = 1
+			})
+			It("should use regular ServiceMonitor template", func() {
+				nsName := types.NamespacedName{Name: namespacedName.Name, Namespace: namespacedName.Namespace}
+				err := sm.TemplateAndUpdateServiceMonitorDeployment(routeURL, blackBoxExporterNamespace, nsName, clusterID, isHCPMonitor, useInsecure, owner)
+				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+
+		When("isHCPMonitor is true", func() {
+			BeforeEach(func() {
+				isHCPMonitor = true
+				get.CalledTimes = 1
+				get.ErrorResponse = consterror.NotFoundErr
+				create.CalledTimes = 1
+			})
+			It("should use HyperShift ServiceMonitor template", func() {
+				nsName := types.NamespacedName{Name: namespacedName.Name, Namespace: namespacedName.Namespace}
+				err := sm.TemplateAndUpdateServiceMonitorDeployment(routeURL, blackBoxExporterNamespace, nsName, clusterID, isHCPMonitor, useInsecure, owner)
+				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+
+		When("useInsecure is true", func() {
+			BeforeEach(func() {
+				useInsecure = true
+				get.CalledTimes = 1
+				get.ErrorResponse = consterror.NotFoundErr
+				create.CalledTimes = 1
+			})
+			It("should use insecure module", func() {
+				nsName := types.NamespacedName{Name: namespacedName.Name, Namespace: namespacedName.Namespace}
+				err := sm.TemplateAndUpdateServiceMonitorDeployment(routeURL, blackBoxExporterNamespace, nsName, clusterID, isHCPMonitor, useInsecure, owner)
+				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+	})
+
+	Describe("HypershiftUpdateServiceMonitorDeployment", func() {
+		var template rhobsv1.ServiceMonitor
+
+		BeforeEach(func() {
+			template = rhobsv1.ServiceMonitor{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "test",
+				},
+			}
+			get.CalledTimes = 1
+		})
+
+		When("ServiceMonitor does not exist", func() {
+			BeforeEach(func() {
+				get.ErrorResponse = consterror.NotFoundErr
+				create.CalledTimes = 1
+			})
+			It("should create a new ServiceMonitor", func() {
+				err := sm.HypershiftUpdateServiceMonitorDeployment(template)
+				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+
+		When("Get fails with unexpected error", func() {
+			BeforeEach(func() {
+				get.ErrorResponse = consterror.ErrCustomError
+			})
+			It("should return the error", func() {
+				err := sm.HypershiftUpdateServiceMonitorDeployment(template)
+				Expect(err).To(Equal(consterror.ErrCustomError))
+			})
+		})
+
+		When("ServiceMonitor exists and needs update", func() {
+			BeforeEach(func() {
+				deepEqual.CalledTimes = 1
+				deepEqual.ReturnValue = false
+				update.CalledTimes = 1
+			})
+			It("should update the ServiceMonitor", func() {
+				err := sm.HypershiftUpdateServiceMonitorDeployment(template)
+				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+	})
+
+	Describe("TemplateForServiceMonitorResource", func() {
+		It("should create a properly configured ServiceMonitor", func() {
+			routeURL := "https://example.com"
+			blackBoxExporterNamespace := "test-namespace"
+			params := map[string][]string{"module": {"http_2xx"}, "target": {routeURL}}
+			namespacedName := types.NamespacedName{Name: "test", Namespace: "test"}
+			clusterID := "test-cluster"
+			owner := &metav1.OwnerReference{
+				APIVersion: "v1",
+				Kind:       "Test",
+				Name:       "test-owner",
+			}
+
+			result := sm.TemplateForServiceMonitorResource(routeURL, blackBoxExporterNamespace, params, namespacedName, clusterID, owner)
+
+			Expect(result.Name).To(Equal("test"))
+			Expect(result.Namespace).To(Equal("test"))
+			Expect(result.OwnerReferences).To(HaveLen(1))
+			Expect(result.Spec.Endpoints).To(HaveLen(1))
+			Expect(result.Spec.Endpoints[0].Params).To(Equal(params))
+		})
+	})
+
+	Describe("HyperShiftTemplateForServiceMonitorResource", func() {
+		It("should create a properly configured HyperShift ServiceMonitor", func() {
+			routeURL := "https://example.com"
+			blackBoxExporterNamespace := "test-namespace"
+			params := map[string][]string{"module": {"http_2xx"}, "target": {routeURL}}
+			namespacedName := types.NamespacedName{Name: "test", Namespace: "test"}
+			clusterID := "test-cluster"
+			owner := &metav1.OwnerReference{
+				APIVersion: "v1",
+				Kind:       "Test",
+				Name:       "test-owner",
+			}
+
+			result := sm.HyperShiftTemplateForServiceMonitorResource(routeURL, blackBoxExporterNamespace, params, namespacedName, clusterID, owner)
+
+			Expect(result.Name).To(Equal("test"))
+			Expect(result.Namespace).To(Equal("test"))
+			Expect(result.OwnerReferences).To(HaveLen(1))
+			Expect(result.Spec.Endpoints).To(HaveLen(1))
+			Expect(result.Spec.Endpoints[0].Params).To(Equal(params))
 		})
 	})
 })

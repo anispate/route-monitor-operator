@@ -8,9 +8,13 @@ import (
 
 	"github.com/onsi/ginkgo"
 	configv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/route-monitor-operator/pkg/alert"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	rhobsv1 "github.com/rhobs/obo-prometheus-operator/pkg/apis/monitoring/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -20,9 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/openshift/route-monitor-operator/api/v1alpha1"
-	monitoringopenshiftiov1alpha1 "github.com/openshift/route-monitor-operator/api/v1alpha1"
-	monitoringv1alpha1 "github.com/openshift/route-monitor-operator/api/v1alpha1"
+	rmov1alpha1 "github.com/openshift/route-monitor-operator/api/v1alpha1"
 )
 
 type Integration struct {
@@ -33,19 +35,24 @@ type Integration struct {
 }
 
 func NewIntegration() (*Integration, error) {
+	setupLog := ctrl.Log.WithName("setup")
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-
-	utilruntime.Must(monitoringv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(rmov1alpha1.AddToScheme(scheme))
 	utilruntime.Must(monitoringv1.AddToScheme(scheme))
 	utilruntime.Must(routev1.AddToScheme(scheme))
 	utilruntime.Must(configv1.AddToScheme(scheme))
+	utilruntime.Must(operatorv1.AddToScheme(scheme))
+	utilruntime.Must(rmov1alpha1.AddToScheme(scheme))
+	utilruntime.Must(hypershiftv1beta1.AddToScheme(scheme))
+	utilruntime.Must(rhobsv1.AddToScheme(scheme))
+	utilruntime.Must(apiextensionsv1.AddToScheme(scheme))
 
-	utilruntime.Must(monitoringopenshiftiov1alpha1.AddToScheme(scheme))
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 	})
 	if err != nil {
+		setupLog.Error(err, "unable to start manager")
 		return &Integration{}, err
 	}
 	client := mgr.GetClient()
@@ -69,7 +76,7 @@ func (i *Integration) Shutdown() {
 
 func (i *Integration) RemoveClusterUrlMonitor(namespace, name string) error {
 	namespacedName := types.NamespacedName{Namespace: namespace, Name: name}
-	clusterUrlMonitor := v1alpha1.ClusterUrlMonitor{}
+	clusterUrlMonitor := rmov1alpha1.ClusterUrlMonitor{}
 
 	err := i.Client.Get(context.TODO(), namespacedName, &clusterUrlMonitor)
 	if errors.IsNotFound(err) {
@@ -92,14 +99,14 @@ func (i *Integration) RemoveClusterUrlMonitor(namespace, name string) error {
 		time.Sleep(1 * time.Second)
 	}
 	if t == maxRetries {
-		ginkgo.Fail("ClusterUrlMonitor didn't appear after %d seconds", maxRetries)
+		ginkgo.Fail("ClusterUrlMonitor wasn't removed after %d seconds", maxRetries)
 	}
 	return err
 }
 
 func (i *Integration) RemoveRouteMonitor(namespace, name string) error {
 	namespacedName := types.NamespacedName{Namespace: namespace, Name: name}
-	routeMonitor := v1alpha1.RouteMonitor{}
+	routeMonitor := rmov1alpha1.RouteMonitor{}
 
 	err := i.Client.Get(context.TODO(), namespacedName, &routeMonitor)
 	if errors.IsNotFound(err) {
@@ -122,7 +129,7 @@ func (i *Integration) RemoveRouteMonitor(namespace, name string) error {
 		time.Sleep(1 * time.Second)
 	}
 	if t == maxRetries {
-		ginkgo.Fail("RouteMonitor didn't appear after %d seconds", maxRetries)
+		ginkgo.Fail("RouteMonitor wasn't removed after %d seconds", maxRetries)
 	}
 	return err
 }
@@ -159,8 +166,8 @@ func (i *Integration) WaitForPrometheusRule(name types.NamespacedName, seconds i
 	return prometheusRule, nil
 }
 
-func (i *Integration) RouteMonitorWaitForPrometheusRuleRef(name types.NamespacedName, seconds int) (v1alpha1.RouteMonitor, error) {
-	routeMonitor := v1alpha1.RouteMonitor{}
+func (i *Integration) RouteMonitorWaitForPrometheusRuleRef(name types.NamespacedName, seconds int) (rmov1alpha1.RouteMonitor, error) {
+	routeMonitor := rmov1alpha1.RouteMonitor{}
 	t := 0
 	for ; t < seconds; t++ {
 		err := i.Client.Get(context.TODO(), name, &routeMonitor)
@@ -175,8 +182,8 @@ func (i *Integration) RouteMonitorWaitForPrometheusRuleRef(name types.Namespaced
 	return routeMonitor, nil
 }
 
-func (i *Integration) ClusterUrlMonitorWaitForPrometheusRuleRef(name types.NamespacedName, seconds int) (v1alpha1.ClusterUrlMonitor, error) {
-	clusterUrlMonitor := v1alpha1.ClusterUrlMonitor{}
+func (i *Integration) ClusterUrlMonitorWaitForPrometheusRuleRef(name types.NamespacedName, seconds int) (rmov1alpha1.ClusterUrlMonitor, error) {
+	clusterUrlMonitor := rmov1alpha1.ClusterUrlMonitor{}
 	t := 0
 	for ; t < seconds; t++ {
 		err := i.Client.Get(context.TODO(), name, &clusterUrlMonitor)
@@ -217,7 +224,7 @@ func (i *Integration) RouteMonitorWaitForPrometheusRuleCorrectSLO(name types.Nam
 		return err
 	}
 
-	routeMonitor := v1alpha1.RouteMonitor{}
+	routeMonitor := rmov1alpha1.RouteMonitor{}
 	err = i.Client.Get(context.TODO(), name, &routeMonitor)
 	if errors.IsNotFound(err) {
 		return fmt.Errorf("RouteMonitor wasn't found")
@@ -254,7 +261,7 @@ func (i *Integration) ClusterUrlMonitorWaitForPrometheusRuleCorrectSLO(name type
 		return err
 	}
 
-	clusterUrlMonitor := v1alpha1.ClusterUrlMonitor{}
+	clusterUrlMonitor := rmov1alpha1.ClusterUrlMonitor{}
 	err = i.Client.Get(context.TODO(), name, &clusterUrlMonitor)
 	if errors.IsNotFound(err) {
 		return fmt.Errorf("ClusterUrlMonitor wasn't found")

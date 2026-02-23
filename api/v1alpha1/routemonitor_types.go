@@ -20,21 +20,56 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // RouteMonitorSpec defines the desired state of RouteMonitor
 type RouteMonitorSpec struct {
 	Route RouteMonitorRouteSpec `json:"route,omitempty"`
 	Slo   SloSpec               `json:"slo,omitempty"`
+
+	// +kubebuilder:default:false
+	// +kubebuilder:validation:Optional
+
+	// SkipPrometheusRule instructs the controller to skip the creation of PrometheusRule CRs.
+	// One common use-case for is for alerts that are defined separately, such as for hosted clusters.
+	SkipPrometheusRule bool `json:"skipPrometheusRule"`
+
+	// +kubebuilder:default:false
+	// +kubebuilder:validation:Optional
+
+	// InsecureSkipTLSVerify indicates that the blackbox exporter module used to probe this route
+	// should *not* use https
+	InsecureSkipTLSVerify bool `json:"insecureSkipTLSVerify"`
+
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Enum=monitoring.coreos.com;monitoring.rhobs
+	// +kubebuilder:default=monitoring.coreos.com
+
+	// ServiceMonitorType dictates the type of ServiceMonitor the RouteMonitor should create
+	ServiceMonitorType string `json:"serviceMonitorType,omitempty"`
 }
 
-// RouteMonitorSpec references the obsered Route resource
+const (
+	// The following values should match the kubebuilder-enumerated values for serviceMonitorType above
+	ServiceMonitorTypeCoreOS = "monitoring.coreos.com"
+	ServiceMonitorTypeRHOBS  = "monitoring.rhobs"
+)
+
+// RouteMonitorRouteSpec references the observed Route resource
 type RouteMonitorRouteSpec struct {
 	// Name is the name of the Route
 	Name string `json:"name,omitempty"`
 	// Namespace is the namespace of the Route
 	Namespace string `json:"namespace,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Minimum:=1
+
+	// Port optionally defines the port we should use while probing
+	Port int64 `json:"port,omitempty"`
+
+	// +kubebuilder:validation:Optional
+
+	// Suffix optionally defines the path we should probe (/livez /readyz etc)
+	Suffix string `json:"suffix,omitempty"`
 }
 
 // RouteMonitorStatus defines the observed state of RouteMonitor

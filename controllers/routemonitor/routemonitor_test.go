@@ -1,10 +1,11 @@
 package routemonitor_test
 
 import (
-	"github.com/golang/mock/gomock"
+	"github.com/go-logr/logr"
 	fuzz "github.com/google/gofuzz"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"go.uber.org/mock/gomock"
 
 	"time"
 
@@ -62,7 +63,7 @@ var _ = Describe("Routemonitor", func() {
 		mockPrometheusRule = controllermocks.NewMockPrometheusRuleHandler(mockCtrl)
 
 		routeMonitorReconciler = routemonitor.RouteMonitorReconciler{
-			Log:              constinit.Logger,
+			Log:              logr.Discard(),
 			Client:           mockClient,
 			Scheme:           constinit.Scheme,
 			BlackBoxExporter: mockBlackboxExporter,
@@ -159,7 +160,7 @@ var _ = Describe("Routemonitor", func() {
 				Times(ensureBlackBoxExporterResourcesExist.CalledTimes).
 				Return(ensureBlackBoxExporterResourcesExist.ErrorResponse)
 
-			mockServiceMonitor.EXPECT().DeleteServiceMonitorDeployment(gomock.Any()).
+			mockServiceMonitor.EXPECT().DeleteServiceMonitorDeployment(gomock.Any(), gomock.Any()).
 				Times(deleteServiceMonitorDeployment.CalledTimes).
 				Return(deleteServiceMonitorDeployment.ErrorResponse)
 
@@ -172,11 +173,11 @@ var _ = Describe("Routemonitor", func() {
 		})
 		When("func ShouldDeleteBlackBoxExporterResources fails unexpectedly", func() {
 			BeforeEach(func() {
-				shouldDeleteBlackBoxExporterResources.ErrorResponse = consterror.CustomError
+				shouldDeleteBlackBoxExporterResources.ErrorResponse = consterror.ErrCustomError
 			})
 			It("should bubble up the error", func() {
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(consterror.CustomError))
+				Expect(err).To(MatchError(consterror.ErrCustomError))
 			})
 		})
 		Describe("ShouldDeleteBlackBoxExporterResources instructs to delete", func() {
@@ -186,11 +187,11 @@ var _ = Describe("Routemonitor", func() {
 			})
 			When("func EnsureBlackBoxExporterServiceAbsent fails unexpectedly", func() {
 				BeforeEach(func() {
-					ensureBlackBoxExporterResourcesAbsent.ErrorResponse = consterror.CustomError
+					ensureBlackBoxExporterResourcesAbsent.ErrorResponse = consterror.ErrCustomError
 				})
 				It("should bubble up the error", func() {
 					Expect(err).To(HaveOccurred())
-					Expect(err).To(MatchError(consterror.CustomError))
+					Expect(err).To(MatchError(consterror.ErrCustomError))
 				})
 			})
 			When("func EnsureBlackBoxExporterDeploymentAbsent fails unexpectedly", func() {
@@ -199,7 +200,7 @@ var _ = Describe("Routemonitor", func() {
 				})
 				It("should bubble up the error", func() {
 					Expect(err).To(HaveOccurred())
-					Expect(err).To(MatchError(consterror.CustomError))
+					Expect(err).To(MatchError(consterror.ErrCustomError))
 				})
 			})
 			When("func deleteServiceMonitorDeployment fails unexpectedly", func() {
@@ -209,7 +210,7 @@ var _ = Describe("Routemonitor", func() {
 				})
 				It("should bubble up the error", func() {
 					Expect(err).To(HaveOccurred())
-					Expect(err).To(MatchError(consterror.CustomError))
+					Expect(err).To(MatchError(consterror.ErrCustomError))
 				})
 			})
 			When("func DeletePrometheusRuleDeployment fails unexpectedly", func() {
@@ -220,7 +221,7 @@ var _ = Describe("Routemonitor", func() {
 				})
 				It("should bubble up the error", func() {
 					Expect(err).To(HaveOccurred())
-					Expect(err).To(MatchError(consterror.CustomError))
+					Expect(err).To(MatchError(consterror.ErrCustomError))
 				})
 			})
 			When("func EnsureFinalizerAbsent fails unexpectedly", func() {
@@ -229,11 +230,11 @@ var _ = Describe("Routemonitor", func() {
 					deleteServiceMonitorDeployment.CalledTimes = 1
 					deletePrometheusRuleDeployment.CalledTimes = 1
 					mockUtils.EXPECT().DeleteFinalizer(gomock.Any(), gomock.Any()).Return(true).Times(2)
-					mockUtils.EXPECT().UpdateMonitorResource(gomock.Any()).Return(utilreconcile.RequeueOperation(), consterror.CustomError)
+					mockUtils.EXPECT().UpdateMonitorResource(gomock.Any()).Return(utilreconcile.RequeueOperation(), consterror.ErrCustomError)
 				})
 				It("should bubble up the error", func() {
 					Expect(err).To(HaveOccurred())
-					Expect(err).To(MatchError(consterror.CustomError))
+					Expect(err).To(MatchError(consterror.ErrCustomError))
 				})
 			})
 			When("all deletions happened successfully", func() {
@@ -260,31 +261,31 @@ var _ = Describe("Routemonitor", func() {
 			})
 			When("func EnsureServiceMonitorResourceAbsent fails unexpectedly", func() {
 				BeforeEach(func() {
-					deleteServiceMonitorDeployment.ErrorResponse = consterror.CustomError
+					deleteServiceMonitorDeployment.ErrorResponse = consterror.ErrCustomError
 					deletePrometheusRuleDeployment.CalledTimes = 0
 				})
 				It("should bubble up the error", func() {
 					Expect(err).To(HaveOccurred())
-					Expect(err).To(MatchError(consterror.CustomError))
+					Expect(err).To(MatchError(consterror.ErrCustomError))
 				})
 			})
 			When("func EnsurePrometheusRuleResourceAbsent fails unexpectedly", func() {
 				BeforeEach(func() {
-					deletePrometheusRuleDeployment.ErrorResponse = consterror.CustomError
+					deletePrometheusRuleDeployment.ErrorResponse = consterror.ErrCustomError
 				})
 				It("should bubble up the error", func() {
 					Expect(err).To(HaveOccurred())
-					Expect(err).To(MatchError(consterror.CustomError))
+					Expect(err).To(MatchError(consterror.ErrCustomError))
 				})
 			})
 			When("the resource has a finalizer but 'Update' failed", func() {
 				BeforeEach(func() {
 					mockUtils.EXPECT().DeleteFinalizer(gomock.Any(), gomock.Any()).Return(true).Times(2)
-					mockUtils.EXPECT().UpdateMonitorResource(gomock.Any()).Return(utilreconcile.RequeueOperation(), consterror.CustomError)
+					mockUtils.EXPECT().UpdateMonitorResource(gomock.Any()).Return(utilreconcile.RequeueOperation(), consterror.ErrCustomError)
 				})
 				It("Should bubble up the failure", func() {
 					Expect(err).To(HaveOccurred())
-					Expect(err).To(MatchError(consterror.CustomError))
+					Expect(err).To(MatchError(consterror.ErrCustomError))
 				})
 			})
 			When("the resource has a finalizer but 'Update' succeeds", func() {
@@ -361,7 +362,7 @@ var _ = Describe("Routemonitor", func() {
 			})
 			It("should stop requeue", func() {
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(consterror.CustomError))
+				Expect(err).To(MatchError(consterror.ErrCustomError))
 			})
 		})
 		When("the RouteMonitor is not found", func() {
@@ -469,7 +470,7 @@ var _ = Describe("Routemonitor", func() {
 					res, err = routeMonitorReconciler.GetRoute(routeMonitor)
 					// Assert
 					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(HavePrefix("Invalid CR:"))
+					Expect(err.Error()).To(HavePrefix("invalid CR:"))
 					Expect(res).To(BeZero())
 				})
 			})
@@ -482,7 +483,7 @@ var _ = Describe("Routemonitor", func() {
 					res, err = routeMonitorReconciler.GetRoute(routeMonitor)
 					// Assert
 					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(HavePrefix("Invalid CR:"))
+					Expect(err.Error()).To(HavePrefix("invalid CR:"))
 					Expect(res).To(BeZero())
 				})
 			})
@@ -534,7 +535,7 @@ var _ = Describe("Routemonitor", func() {
 			It("should return No Ingress error", func() {
 				Expect(res).To(Equal(utilreconcile.RequeueOperation()))
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(HavePrefix("No Ingress:"))
+				Expect(err.Error()).To(HavePrefix("no Ingress:"))
 			})
 		})
 		When("the Route has no Host", func() {
@@ -544,7 +545,7 @@ var _ = Describe("Routemonitor", func() {
 			It("should return No Host error", func() {
 				Expect(res).To(Equal(utilreconcile.RequeueOperation()))
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(customerrors.NoHost))
+				Expect(err).To(MatchError(customerrors.ErrNoHost))
 			})
 		})
 
@@ -557,7 +558,7 @@ var _ = Describe("Routemonitor", func() {
 					firstRouteURL,
 					"eddie",
 				}
-				mockUtils.EXPECT().UpdateMonitorResourceStatus(gomock.Any()).Times(1).Return(utilreconcile.RequeueOperation(), consterror.CustomError)
+				mockUtils.EXPECT().UpdateMonitorResourceStatus(gomock.Any()).Times(1).Return(utilreconcile.RequeueOperation(), consterror.ErrCustomError)
 				routeMonitorReconciler.Client = mockClient
 			})
 			JustBeforeEach(func() {
@@ -565,7 +566,7 @@ var _ = Describe("Routemonitor", func() {
 			})
 			It("should bubble up the error", func() {
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(consterror.CustomError))
+				Expect(err).To(MatchError(consterror.ErrCustomError))
 			})
 		})
 		When("the Route has too many Ingress", func() {
@@ -644,11 +645,11 @@ var _ = Describe("Routemonitor", func() {
 		})
 		Describe("The RouteMonitor settings are INVALID", func() {
 			BeforeEach(func() {
-				mockUtils.EXPECT().ParseMonitorSLOSpecs(routeMonitor.Status.RouteURL, routeMonitor.Spec.Slo).Return("", customerrors.NoHost).Times(1)
+				mockUtils.EXPECT().ParseMonitorSLOSpecs(routeMonitor.Status.RouteURL, routeMonitor.Spec.Slo).Return("", customerrors.ErrNoHost).Times(1)
 			})
 			Describe("It sets the Error state in the RouteMonitor the first time", func() {
 				BeforeEach(func() {
-					mockUtils.EXPECT().SetErrorStatus(gomock.Any(), customerrors.NoHost).Return(true)
+					mockUtils.EXPECT().SetErrorStatus(gomock.Any(), customerrors.ErrNoHost).Return(true)
 				})
 				When("updating the RouteMonitor with the new error State works", func() {
 					BeforeEach(func() {
@@ -661,10 +662,10 @@ var _ = Describe("Routemonitor", func() {
 				})
 				When("updating the RouteMonitor new error State failes", func() {
 					BeforeEach(func() {
-						mockUtils.EXPECT().UpdateMonitorResourceStatus(gomock.Any()).Return(utilreconcile.RequeueOperation(), consterror.CustomError)
+						mockUtils.EXPECT().UpdateMonitorResourceStatus(gomock.Any()).Return(utilreconcile.RequeueOperation(), consterror.ErrCustomError)
 					})
 					It("requeues with the particular error", func() {
-						Expect(err).To(Equal(consterror.CustomError))
+						Expect(err).To(Equal(consterror.ErrCustomError))
 						Expect(resp).To(Equal(utilreconcile.RequeueOperation()))
 					})
 				})
@@ -673,14 +674,14 @@ var _ = Describe("Routemonitor", func() {
 			Describe("It deletes existing PrometheusRules", func() {
 				BeforeEach(func() {
 					routeMonitor.Status.PrometheusRuleRef = v1alpha1.NamespacedName{Name: "test", Namespace: "test2"}
-					mockUtils.EXPECT().SetErrorStatus(gomock.Any(), customerrors.NoHost).Return(false)
+					mockUtils.EXPECT().SetErrorStatus(gomock.Any(), customerrors.ErrNoHost).Return(false)
 				})
 				When("the PrometheusRule deletion fails", func() {
 					BeforeEach(func() {
-						mockPrometheusRule.EXPECT().DeletePrometheusRuleDeployment(routeMonitor.Status.PrometheusRuleRef).Times(1).Return(consterror.CustomError)
+						mockPrometheusRule.EXPECT().DeletePrometheusRuleDeployment(routeMonitor.Status.PrometheusRuleRef).Times(1).Return(consterror.ErrCustomError)
 					})
 					It("should reconcile with the particular error", func() {
-						Expect(err).To(Equal(consterror.CustomError))
+						Expect(err).To(Equal(consterror.ErrCustomError))
 						Expect(resp).To(Equal(utilreconcile.RequeueOperation()))
 					})
 				})
@@ -691,10 +692,10 @@ var _ = Describe("Routemonitor", func() {
 					When("updating PrometheusRuleRef in the RouteMonitor fails", func() {
 						BeforeEach(func() {
 							mockUtils.EXPECT().SetResourceReference(gomock.Any(), gomock.Any()).Return(true, nil)
-							mockUtils.EXPECT().UpdateMonitorResourceStatus(gomock.Any()).Return(utilreconcile.RequeueOperation(), consterror.CustomError)
+							mockUtils.EXPECT().UpdateMonitorResourceStatus(gomock.Any()).Return(utilreconcile.RequeueOperation(), consterror.ErrCustomError)
 						})
 						It("should reconcile with the particular error", func() {
-							Expect(err).To(Equal(consterror.CustomError))
+							Expect(err).To(Equal(consterror.ErrCustomError))
 							Expect(resp).To(Equal(utilreconcile.RequeueOperation()))
 						})
 					})
@@ -718,14 +719,14 @@ var _ = Describe("Routemonitor", func() {
 			})
 			When("the update the PrometheusRule failed", func() {
 				BeforeEach(func() {
-					mockPrometheusRule.EXPECT().UpdatePrometheusRuleDeployment(gomock.Any()).Return(consterror.CustomError)
+					mockPrometheusRule.EXPECT().UpdatePrometheusRuleDeployment(gomock.Any()).Return(consterror.ErrCustomError)
 				})
 				It("requeues with the error", func() {
-					Expect(err).To(Equal(consterror.CustomError))
+					Expect(err).To(Equal(consterror.ErrCustomError))
 					Expect(resp).To(Equal(utilreconcile.RequeueOperation()))
 				})
 			})
-			When("the update of the PrometheusRule succeded", func() {
+			When("the update of the PrometheusRule succeeded", func() {
 				BeforeEach(func() {
 					mockPrometheusRule.EXPECT().UpdatePrometheusRuleDeployment(gomock.Any())
 				})
@@ -744,10 +745,10 @@ var _ = Describe("Routemonitor", func() {
 					})
 					When("updating the reference fails", func() {
 						BeforeEach(func() {
-							mockUtils.EXPECT().UpdateMonitorResourceStatus(gomock.Any()).Return(utilreconcile.RequeueOperation(), consterror.CustomError)
+							mockUtils.EXPECT().UpdateMonitorResourceStatus(gomock.Any()).Return(utilreconcile.RequeueOperation(), consterror.ErrCustomError)
 						})
 						It("requeus with error", func() {
-							Expect(err).To(Equal(consterror.CustomError))
+							Expect(err).To(Equal(consterror.ErrCustomError))
 							Expect(resp).To(Equal(utilreconcile.RequeueOperation()))
 						})
 					})
@@ -771,38 +772,38 @@ var _ = Describe("Routemonitor", func() {
 				routeMonitor.Status.RouteURL = ""
 			})
 			It("will requeue with the NoHost error ", func() {
-				Expect(err).To(Equal(customerrors.NoHost))
+				Expect(err).To(Equal(customerrors.ErrNoHost))
 				Expect(resp).To(Equal(utilreconcile.RequeueOperation()))
 			})
 		})
 		Describe("It updates the ServiceMonitor targeting the blackbox Exporter Namespace", func() {
-			BeforeEach(func() {
-				mockBlackboxExporter.EXPECT().GetBlackBoxExporterNamespace().Return("bla")
-				mockUtils.EXPECT().GetClusterID().Return("test-cluster-id")
-			})
 			When("the update of the ServiceMonitor fails", func() {
 				BeforeEach(func() {
-					mockServiceMonitor.EXPECT().UpdateServiceMonitorDeployment(gomock.Any()).Return(consterror.CustomError)
+					mockServiceMonitor.EXPECT().TemplateAndUpdateServiceMonitorDeployment(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(consterror.ErrCustomError)
+					mockBlackboxExporter.EXPECT().GetBlackBoxExporterNamespace().Return("bla")
+					mockUtils.EXPECT().GetOSDClusterID().Return("test-cluster-id", nil)
 				})
 				It("will requeue with the error", func() {
-					Expect(err).To(Equal(consterror.CustomError))
+					Expect(err).To(Equal(consterror.ErrCustomError))
 					Expect(resp).To(Equal(utilreconcile.RequeueOperation()))
 				})
 			})
-			When("the update of the ServiceMonitor is successfull", func() {
+			When("the update of the ServiceMonitor is successful", func() {
 				BeforeEach(func() {
-					mockServiceMonitor.EXPECT().UpdateServiceMonitorDeployment(gomock.Any())
+					mockServiceMonitor.EXPECT().TemplateAndUpdateServiceMonitorDeployment(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+					mockBlackboxExporter.EXPECT().GetBlackBoxExporterNamespace().Return("bla")
+					mockUtils.EXPECT().GetOSDClusterID().Return("test-cluster-id", nil)
 				})
 				When("the update of the ServiceMonitorRef fails", func() {
 					BeforeEach(func() {
-						mockUtils.EXPECT().SetResourceReference(gomock.Any(), gomock.Any()).Return(false, consterror.CustomError)
+						mockUtils.EXPECT().SetResourceReference(gomock.Any(), gomock.Any()).Return(false, consterror.ErrCustomError)
 					})
 					It("will requeue with the error", func() {
-						Expect(err).To(Equal(consterror.CustomError))
+						Expect(err).To(Equal(consterror.ErrCustomError))
 						Expect(resp).To(Equal(utilreconcile.RequeueOperation()))
 					})
 				})
-				When("the update of the ServiceMonitorRef is successfull", func() {
+				When("the update of the ServiceMonitorRef is successful", func() {
 					BeforeEach(func() {
 						mockUtils.EXPECT().SetResourceReference(gomock.Any(), gomock.Any()).Return(true, nil)
 					})

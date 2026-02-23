@@ -4,19 +4,22 @@ import (
 	"context"
 	"time"
 
+	"github.com/go-logr/logr"
+
 	"github.com/openshift/route-monitor-operator/api/v1alpha1"
 	"github.com/openshift/route-monitor-operator/pkg/consts/blackboxexporter"
 	consterror "github.com/openshift/route-monitor-operator/pkg/consts/test/error"
-	constinit "github.com/openshift/route-monitor-operator/pkg/consts/test/init"
 	clientmocks "github.com/openshift/route-monitor-operator/pkg/util/test/generated/mocks/client"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"go.uber.org/mock/gomock"
 
 	. "github.com/openshift/route-monitor-operator/pkg/blackboxexporter"
 	"github.com/openshift/route-monitor-operator/pkg/util/test/helper"
+
+	operatorv1 "github.com/openshift/api/operator/v1"
 )
 
 var _ = Describe("Blackboxexporter", func() {
@@ -25,8 +28,6 @@ var _ = Describe("Blackboxexporter", func() {
 		mockCtrl   *gomock.Controller
 
 		blackboxExporter BlackBoxExporter
-
-		ctx context.Context
 
 		get    helper.MockHelper
 		delete helper.MockHelper
@@ -37,8 +38,6 @@ var _ = Describe("Blackboxexporter", func() {
 		mockCtrl = gomock.NewController(GinkgoT())
 		mockClient = clientmocks.NewMockClient(mockCtrl)
 
-		ctx = constinit.Context
-
 		get = helper.MockHelper{}
 		delete = helper.MockHelper{}
 		create = helper.MockHelper{}
@@ -46,9 +45,9 @@ var _ = Describe("Blackboxexporter", func() {
 	})
 	JustBeforeEach(func() {
 		blackboxExporter = BlackBoxExporter{
-			Log:    constinit.Logger,
+			Log:    logr.Discard(),
 			Client: mockClient,
-			Ctx:    ctx,
+			Ctx:    context.Background(),
 		}
 
 		mockClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -74,14 +73,14 @@ var _ = Describe("Blackboxexporter", func() {
 		When("'Get' return an error", func() {
 			// Arrange
 			BeforeEach(func() {
-				get.ErrorResponse = consterror.CustomError
+				get.ErrorResponse = consterror.ErrCustomError
 			})
 			It("should bubble the error up", func() {
 				// Act
 				err := blackboxExporter.EnsureBlackBoxExporterServiceAbsent()
 				// Assert
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(consterror.CustomError))
+				Expect(err).To(MatchError(consterror.ErrCustomError))
 			})
 		})
 
@@ -108,7 +107,7 @@ var _ = Describe("Blackboxexporter", func() {
 				err := blackboxExporter.EnsureBlackBoxExporterServiceAbsent()
 				// Assert
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(consterror.CustomError))
+				Expect(err).To(MatchError(consterror.ErrCustomError))
 			})
 		})
 
@@ -134,14 +133,14 @@ var _ = Describe("Blackboxexporter", func() {
 		When("'Get' return an error", func() {
 			// Arrange
 			BeforeEach(func() {
-				get.ErrorResponse = consterror.CustomError
+				get.ErrorResponse = consterror.ErrCustomError
 			})
 			It("should bubble the error up", func() {
 				// Act
 				err := blackboxExporter.EnsureBlackBoxExporterDeploymentAbsent()
 				// Assert
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(consterror.CustomError))
+				Expect(err).To(MatchError(consterror.ErrCustomError))
 			})
 		})
 
@@ -168,7 +167,7 @@ var _ = Describe("Blackboxexporter", func() {
 				err := blackboxExporter.EnsureBlackBoxExporterDeploymentAbsent()
 				// Assert
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(consterror.CustomError))
+				Expect(err).To(MatchError(consterror.ErrCustomError))
 			})
 		})
 
@@ -187,24 +186,41 @@ var _ = Describe("Blackboxexporter", func() {
 
 	})
 	Describe("CreateBlackBoxExporterDeployment", func() {
-		BeforeEach(func() {
-			// Arrange
-			get.CalledTimes = 1
+		var (
+			ingresscontroller operatorv1.IngressController
+		)
 
-		})
-
-		When("the resource(deployment) Exists", func() {
-			It("should call `Get` and not call `Create`", func() {
-				// Act
+		When("the ingresscontroller cannot be retrieved", func() {
+			BeforeEach(func() {
+				get.CalledTimes = 1
+				get.ErrorResponse = consterror.NotFoundErr
+			})
+			It("should return the error", func() {
 				err := blackboxExporter.EnsureBlackBoxExporterDeploymentExists()
-				// Assert
-				Expect(err).NotTo(HaveOccurred())
-
+				Expect(err).To(HaveOccurred())
 			})
 		})
+
+		When("the ingresscontroller is not fully defined", func() {
+			BeforeEach(func() {
+				ingresscontroller = testPrivateDefaultIC()
+				// clear pointer field to simulate unpopulated object
+				ingresscontroller.Status.EndpointPublishingStrategy = nil
+				get.CalledTimes = 1
+				get.ErrorResponse = consterror.ErrCustomError
+			})
+			It("should return an error", func() {
+				err := blackboxExporter.EnsureBlackBoxExporterDeploymentExists()
+				Expect(err).To(HaveOccurred())
+			})
+		})
+
 		When("the resource(deployment) is Not Found", func() {
 			// Arrange
 			BeforeEach(func() {
+				ingresscontroller = testPrivateDefaultIC()
+				mockClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).SetArg(2, ingresscontroller)
+				get.CalledTimes = 2
 				get.ErrorResponse = consterror.NotFoundErr
 				create.CalledTimes = 1
 			})
@@ -218,19 +234,25 @@ var _ = Describe("Blackboxexporter", func() {
 		When("the resource(deployment) Get fails unexpectedly", func() {
 			// Arrange
 			BeforeEach(func() {
-				get.ErrorResponse = consterror.CustomError
+				ingresscontroller = testPrivateDefaultIC()
+				mockClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).SetArg(2, ingresscontroller)
+				get.CalledTimes = 2
+				get.ErrorResponse = consterror.ErrCustomError
 			})
 			It("should return the error and not call `Create`", func() {
 				// Act
 				err := blackboxExporter.EnsureBlackBoxExporterDeploymentExists()
 				// Assert
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(consterror.CustomError))
+				Expect(err).To(MatchError(consterror.ErrCustomError))
 			})
 		})
 		When("the resource(deployment) Create fails unexpectedly", func() {
 			// Arrange
 			BeforeEach(func() {
+				ingresscontroller = testPrivateDefaultIC()
+				mockClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).SetArg(2, ingresscontroller)
+				get.CalledTimes = 2
 				get.ErrorResponse = consterror.NotFoundErr
 				create = helper.CustomErrorHappensOnce()
 			})
@@ -239,7 +261,7 @@ var _ = Describe("Blackboxexporter", func() {
 				err := blackboxExporter.EnsureBlackBoxExporterDeploymentExists()
 				// Assert
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(consterror.CustomError))
+				Expect(err).To(MatchError(consterror.ErrCustomError))
 			})
 		})
 	})
@@ -281,7 +303,7 @@ var _ = Describe("Blackboxexporter", func() {
 				err := blackboxExporter.EnsureBlackBoxExporterServiceExists()
 				// Assert
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(consterror.CustomError))
+				Expect(err).To(MatchError(consterror.ErrCustomError))
 			})
 		})
 		When("the resource(service) Create fails unexpectedly", func() {
@@ -295,7 +317,7 @@ var _ = Describe("Blackboxexporter", func() {
 				err := blackboxExporter.EnsureBlackBoxExporterServiceExists()
 				// Assert
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(consterror.CustomError))
+				Expect(err).To(MatchError(consterror.ErrCustomError))
 			})
 		})
 	})
@@ -328,7 +350,7 @@ var _ = Describe("Blackboxexporter", func() {
 				_, err := blackboxExporter.ShouldDeleteBlackBoxExporterResources()
 				// Assert
 				Expect(err).To(HaveOccurred())
-				Expect(err).To(MatchError(consterror.CustomError))
+				Expect(err).To(MatchError(consterror.ErrCustomError))
 			})
 		})
 
@@ -386,4 +408,122 @@ var _ = Describe("Blackboxexporter", func() {
 		})
 	})
 
+	Describe("New", func() {
+		It("should create a BlackBoxExporter with correct properties", func() {
+			bbe := New(mockClient, logr.Discard(), context.Background(), "test-image", "test-namespace")
+			Expect(bbe.Client).To(Equal(mockClient))
+			Expect(bbe.Image).To(Equal("test-image"))
+			Expect(bbe.NamespacedName.Namespace).To(Equal("test-namespace"))
+		})
+	})
+
+	Describe("GetBlackBoxExporterNamespace", func() {
+		It("should return the correct namespace", func() {
+			bbe := New(mockClient, logr.Discard(), context.Background(), "test-image", "test-namespace")
+			result := bbe.GetBlackBoxExporterNamespace()
+			Expect(result).To(Equal("test-namespace"))
+		})
+	})
+
+	Describe("EnsureBlackBoxExporterConfigMapExists", func() {
+		When("the resource exists", func() {
+			BeforeEach(func() {
+				get.CalledTimes = 1
+			})
+			It("should not create a new ConfigMap", func() {
+				err := blackboxExporter.EnsureBlackBoxExporterConfigMapExists()
+				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+
+		When("the resource does not exist", func() {
+			BeforeEach(func() {
+				get = helper.NotFoundErrorHappensOnce()
+				create.CalledTimes = 1
+			})
+			It("should create a new ConfigMap", func() {
+				err := blackboxExporter.EnsureBlackBoxExporterConfigMapExists()
+				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+
+		When("Get fails with unexpected error", func() {
+			BeforeEach(func() {
+				get = helper.CustomErrorHappensOnce()
+			})
+			It("should return the error", func() {
+				err := blackboxExporter.EnsureBlackBoxExporterConfigMapExists()
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(consterror.ErrCustomError))
+			})
+		})
+	})
+
+	Describe("EnsureBlackBoxExporterConfigMapAbsent", func() {
+		When("the resource exists", func() {
+			BeforeEach(func() {
+				get.CalledTimes = 1
+				delete.CalledTimes = 1
+			})
+			It("should delete the ConfigMap", func() {
+				err := blackboxExporter.EnsureBlackBoxExporterConfigMapAbsent()
+				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+
+		When("the resource does not exist", func() {
+			BeforeEach(func() {
+				get = helper.NotFoundErrorHappensOnce()
+			})
+			It("should not attempt to delete", func() {
+				err := blackboxExporter.EnsureBlackBoxExporterConfigMapAbsent()
+				Expect(err).NotTo(HaveOccurred())
+			})
+		})
+
+		When("Get fails with unexpected error", func() {
+			BeforeEach(func() {
+				get = helper.CustomErrorHappensOnce()
+			})
+			It("should return the error", func() {
+				err := blackboxExporter.EnsureBlackBoxExporterConfigMapAbsent()
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(MatchError(consterror.ErrCustomError))
+			})
+		})
+	})
+
+	Describe("EnsureBlackBoxExporterResourcesAbsent", func() {
+		BeforeEach(func() {
+			get.CalledTimes = 3
+			delete.CalledTimes = 3
+		})
+		It("should delete all BlackBox Exporter resources", func() {
+			err := blackboxExporter.EnsureBlackBoxExporterResourcesAbsent()
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
 })
+
+func testPrivateDefaultIC() operatorv1.IngressController {
+	ic := operatorv1.IngressController{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "default",
+			Namespace: "openshift-ingress-operator",
+		},
+		Status: operatorv1.IngressControllerStatus{
+			EndpointPublishingStrategy: &operatorv1.EndpointPublishingStrategy{
+				LoadBalancer: &operatorv1.LoadBalancerStrategy{
+					Scope: operatorv1.InternalLoadBalancer,
+					ProviderParameters: &operatorv1.ProviderLoadBalancerParameters{
+						AWS: &operatorv1.AWSLoadBalancerParameters{
+							Type: operatorv1.AWSNetworkLoadBalancer,
+						},
+					},
+				},
+			},
+		},
+	}
+	return ic
+}

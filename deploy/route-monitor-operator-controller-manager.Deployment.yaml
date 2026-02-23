@@ -2,6 +2,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    package-operator.run/phase: deploy
   labels:
     app: route-monitor-operator
     component: operator
@@ -17,6 +19,8 @@ spec:
       control-plane: controller-manager
   template:
     metadata:
+      annotations:
+        package-operator.run/phase: deploy
       labels:
         app: route-monitor-operator
         component: operator
@@ -35,18 +39,32 @@ spec:
             - --zap-log-level=debug
             - --blackbox-image=$(BLACKBOX_IMAGE)
             - --blackbox-namespace=$(BLACKBOX_NAMESPACE)
-            - --config=controller_manager_config.yaml
+            - --probe-api-url=$(PROBE_API_URL)
+            - --oidc-client-id=$(OIDC_CLIENT_ID)
+            - --oidc-client-secret=$(OIDC_CLIENT_SECRET)
+            - --oidc-issuer-url=$(OIDC_ISSUER_URL)
+            - --only-public-clusters=$(ONLY_PUBLIC_CLUSTERS)
           command:
             - /manager
           env:
             - name: LOG_LEVEL
               value: "1"
             - name: BLACKBOX_IMAGE
-              value: quay.io/prometheus/blackbox-exporter:master
+              value: quay.io/prometheus/blackbox-exporter@sha256:b04a9fef4fa086a02fc7fcd8dcdbc4b7b35cc30cdee860fdc6a19dd8b208d63e
             - name: BLACKBOX_NAMESPACE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: PROBE_API_URL
+              value: ""
+            - name: OIDC_CLIENT_ID
+              value: ""
+            - name: OIDC_CLIENT_SECRET
+              value: ""
+            - name: OIDC_ISSUER_URL
+              value: ""
+            - name: ONLY_PUBLIC_CLUSTERS
+              value: "false"
           image: route-monitor-operator:latest
           livenessProbe:
             httpGet:
@@ -64,16 +82,12 @@ spec:
           resources:
             limits:
               cpu: 200m
-              memory: 300Mi
+              memory: 1000Mi
             requests:
               cpu: 100m
               memory: 20Mi
           securityContext:
             allowPrivilegeEscalation: false
-          volumeMounts:
-            - mountPath: /controller_manager_config.yaml
-              name: manager-config
-              subPath: controller_manager_config.yaml
       securityContext:
         runAsNonRoot: true
       serviceAccountName: route-monitor-operator-system
@@ -82,7 +96,3 @@ spec:
         - effect: NoSchedule
           key: node-role.kubernetes.io/infra
           operator: Exists
-      volumes:
-        - configMap:
-            name: route-monitor-operator-manager-config
-          name: manager-config

@@ -20,11 +20,6 @@ import (
 	"context"
 
 	"github.com/go-logr/logr"
-	"k8s.io/apimachinery/pkg/runtime"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
-
 	monitoringv1alpha1 "github.com/openshift/route-monitor-operator/api/v1alpha1"
 	"github.com/openshift/route-monitor-operator/controllers"
 	"github.com/openshift/route-monitor-operator/pkg/alert"
@@ -32,6 +27,12 @@ import (
 	reconcileCommon "github.com/openshift/route-monitor-operator/pkg/reconcile"
 	"github.com/openshift/route-monitor-operator/pkg/servicemonitor"
 	utilreconcile "github.com/openshift/route-monitor-operator/pkg/util/reconcile"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 // ClusterUrlMonitorReconciler reconciles a ClusterUrlMonitor object
@@ -47,7 +48,7 @@ type ClusterUrlMonitorReconciler struct {
 	Common           controllers.MonitorResourceHandler
 }
 
-func NewReconciler(mgr manager.Manager, blackboxExporterImage, blackboxExporterNamespace string) *ClusterUrlMonitorReconciler {
+func NewReconciler(mgr manager.Manager, blackboxExporterImage, blackboxExporterNamespace string, enablehypershift bool, probeAPIURL string) *ClusterUrlMonitorReconciler {
 	log := ctrl.Log.WithName("controllers").WithName("ClusterUrlMonitor")
 	client := mgr.GetClient()
 	ctx := context.Background()
@@ -74,6 +75,10 @@ const (
 // +kubebuilder:rbac:groups=config.openshift.io,resources=dnses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
+// +kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures,verbs=get;list;watch
+// +kubebuilder:rbac:groups=operator.openshift.io,resources=ingresscontrollers,verbs=get;list;watch
+// +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedcontrolplanes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch
 
 func (r *ClusterUrlMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Ctx = ctx
@@ -82,7 +87,7 @@ func (r *ClusterUrlMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	log.V(2).Info("Entering GetClusterUrlMonitor")
 	clusterUrlMonitor, res, err := r.GetClusterUrlMonitor(req)
 	if err != nil {
-		log.Error(err, "Failed to retreive ClusterUrlMonitor. Requeueing...")
+		log.Error(err, "Failed to retrieve ClusterUrlMonitor. Requeueing...")
 		return utilreconcile.RequeueWith(err)
 	}
 	if res.ShouldStop() {
@@ -146,5 +151,9 @@ func (r *ClusterUrlMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Re
 func (r *ClusterUrlMonitorReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&monitoringv1alpha1.ClusterUrlMonitor{}).
+		Watches(
+			&monitoringv1.ServiceMonitor{},
+			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &monitoringv1alpha1.ClusterUrlMonitor{}, handler.OnlyControllerOwner()),
+		).
 		Complete(r)
 }

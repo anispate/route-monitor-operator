@@ -1,12 +1,13 @@
+---
 maintainers:
-- NautiluX
+  - chcollin
+  - srep-functional-leads
+  - srep-team-leads
 approvers:
-- NautiluX
-- Tessg22
-- ninabauer
-- rafael-azevedo
+  - Tessg22  # cspell:ignore Tessg
+  - srep-functional-leads
+  - srep-team-leads
+  - srep-functional-team-rocket
 reviewers:
-- NautiluX
-- Tessg22
-- ninabauer
-- rafael-azevedo
+  - srep-functional-team-rocket
+  - Tessg22

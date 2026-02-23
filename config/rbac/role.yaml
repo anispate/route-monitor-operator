@@ -6,9 +6,18 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+    - operator.openshift.io
+  resources:
+    - ingresscontrollers
+  verbs:
+    - get
+    - list
+    - watch
+- apiGroups:
   - '*'
   resources:
   - services
+  - configmaps
   verbs:
   - create
   - delete
@@ -22,6 +31,7 @@ rules:
   verbs:
   - create
   - delete
+  - update
   - get
   - list
   - watch
@@ -37,6 +47,30 @@ rules:
   - config.openshift.io
   resources:
   - dnses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - config.openshift.io
+  resources:
+  - infrastructures
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - hypershift.openshift.io
+  resources:
+  - hostedcontrolplanes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - hypershift.openshift.io
+  resources:
+  - hostedcontrolplanes
   verbs:
   - get
   - list
@@ -65,9 +99,22 @@ rules:
   - update
   - watch
 - apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - servicemonitors/finalizers
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+  - create
+- apiGroups:
   - monitoring.openshift.io
   resources:
   - clusterurlmonitors
+  - clusterurlmonitors/finalizers
   verbs:
   - create
   - delete
@@ -88,6 +135,7 @@ rules:
   - monitoring.openshift.io
   resources:
   - routemonitors
+  - routemonitors/finalizers
   verbs:
   - create
   - delete
@@ -105,10 +153,92 @@ rules:
   - patch
   - update
 - apiGroups:
-  - route.openshift.io
+  - monitoring.rhobs
   resources:
-  - routes
+  - servicemonitors
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - monitoring.rhobs
+  resources:
+  - servicemonitors/finalizers
   verbs:
   - get
   - list
   - watch
+  - update
+  - patch
+  - delete
+  - create
+- apiGroups:
+  - route.openshift.io
+  resources:
+  - routes
+  verbs:
+  - create
+  - delete
+  - update
+  - patch
+  - get
+  - list
+  - watch
+- apiGroups:
+  - route.openshift.io
+  resources:
+  - routes/custom-host
+  verbs:
+  - create
+  - delete
+  - update
+  - patch
+- apiGroups:
+  - hypershift.openshift.io
+  resources:
+  - hostedcontrolplanes
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - patch
+- apiGroups:
+  - hypershift.openshift.io
+  resources:
+  - hostedcontrolplanes/finalizers
+  - hostedcontrolplanes/status
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+  - create
+- apiGroups:
+  - apiextensions.k8s.io
+  resources:
+  - customresourcedefinitions
+  verbs:
+  - get
+- apiGroups:
+  - '*'
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - avo.openshift.io
+  resources:
+  - vpcendpoints
+  verbs:
+  - get
+  - list
+  - watch
+

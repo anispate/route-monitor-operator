@@ -2,14 +2,12 @@ package reconcileCommon_test
 
 import (
 	"context"
-
-	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"go.uber.org/mock/gomock"
 
 	"github.com/openshift/route-monitor-operator/api/v1alpha1"
 	consterror "github.com/openshift/route-monitor-operator/pkg/consts/test/error"
-	constinit "github.com/openshift/route-monitor-operator/pkg/consts/test/init"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -28,7 +26,6 @@ type ResourceComparerMockHelper struct {
 
 var _ = Describe("CR Deployment Handling", func() {
 	var (
-		ctx                  context.Context
 		mockClient           *clientmocks.MockClient
 		mockCtrl             *gomock.Controller
 		mockResourceComparer *utilmock.MockResourceComparerInterface
@@ -42,7 +39,6 @@ var _ = Describe("CR Deployment Handling", func() {
 		rc reconcilecommon.MonitorResourceCommon
 	)
 	BeforeEach(func() {
-		ctx = constinit.Context
 		mockCtrl = gomock.NewController(GinkgoT())
 		mockClient = clientmocks.NewMockClient(mockCtrl)
 		mockResourceComparer = utilmock.NewMockResourceComparerInterface(mockCtrl)
@@ -55,7 +51,7 @@ var _ = Describe("CR Deployment Handling", func() {
 
 		rc = reconcilecommon.MonitorResourceCommon{
 			Client:   mockClient,
-			Ctx:      ctx,
+			Ctx:      context.Background(),
 			Comparer: mockResourceComparer,
 		}
 	})
@@ -94,12 +90,12 @@ var _ = Describe("CR Deployment Handling", func() {
 		})
 		When("ErrorStatus is empty and needs to be set", func() {
 			It("should set the ErrorStatus and return true", func() {
-				res := rc.SetErrorStatus(&errorStatusString, consterror.CustomError)
+				res := rc.SetErrorStatus(&errorStatusString, consterror.ErrCustomError)
 				Expect(res).To(Equal(true))
-				Expect(errorStatusString).To(Equal(consterror.CustomError.Error()))
+				Expect(errorStatusString).To(Equal(consterror.ErrCustomError.Error()))
 			})
 		})
-		When("ErrorStatus was filled but no error has occured", func() {
+		When("ErrorStatus was filled but no error has occurred", func() {
 			BeforeEach(func() {
 				errorStatusString = "PreviousErrorState"
 			})
@@ -109,12 +105,12 @@ var _ = Describe("CR Deployment Handling", func() {
 				Expect(errorStatusString).To(Equal(""))
 			})
 		})
-		When("ErrorStatus was filled and error occured", func() {
+		When("ErrorStatus was filled and error occurred", func() {
 			BeforeEach(func() {
 				errorStatusString = "PreviousErrorState"
 			})
 			It("should flush the ErrorStatus and return true", func() {
-				res := rc.SetErrorStatus(&errorStatusString, consterror.CustomError)
+				res := rc.SetErrorStatus(&errorStatusString, consterror.ErrCustomError)
 				Expect(res).To(Equal(false))
 				Expect(errorStatusString).To(Equal("PreviousErrorState"))
 			})
@@ -150,7 +146,7 @@ var _ = Describe("CR Deployment Handling", func() {
 			})
 			It("should return an empty string and an error", func() {
 				Expect(res).To(Equal(""))
-				Expect(err).To(Equal(customerrors.InvalidSLO))
+				Expect(err).To(Equal(customerrors.ErrInvalidSLO))
 			})
 		})
 		When("the url is empty", func() {
@@ -159,7 +155,7 @@ var _ = Describe("CR Deployment Handling", func() {
 			})
 			It("should return an empty string and an error", func() {
 				Expect(res).To(Equal(""))
-				Expect(err).To(Equal(customerrors.NoHost))
+				Expect(err).To(Equal(customerrors.ErrNoHost))
 			})
 		})
 		When("the percentage is too high", func() {
@@ -168,7 +164,7 @@ var _ = Describe("CR Deployment Handling", func() {
 			})
 			It("should return an empty string and an error", func() {
 				Expect(res).To(Equal(""))
-				Expect(err).To(Equal(customerrors.InvalidSLO))
+				Expect(err).To(Equal(customerrors.ErrInvalidSLO))
 			})
 		})
 		When("the percentage is too low", func() {
@@ -177,7 +173,7 @@ var _ = Describe("CR Deployment Handling", func() {
 			})
 			It("should return an empty string and an error", func() {
 				Expect(res).To(Equal(""))
-				Expect(err).To(Equal(customerrors.InvalidSLO))
+				Expect(err).To(Equal(customerrors.ErrInvalidSLO))
 			})
 		})
 		When("all values are valid", func() {
@@ -207,11 +203,11 @@ var _ = Describe("CR Deployment Handling", func() {
 		When("when updating the monitor failed", func() {
 			BeforeEach(func() {
 				update.CalledTimes = 1
-				update.ErrorResponse = consterror.CustomError
+				update.ErrorResponse = consterror.ErrCustomError
 			})
 			It("should try to requeue with the particular error", func() {
 				Expect(res).To(Equal(reconcile.RequeueOperation()))
-				Expect(err).To(Equal(consterror.CustomError))
+				Expect(err).To(Equal(consterror.ErrCustomError))
 			})
 		})
 		When("when updating the monitor succeeds", func() {
@@ -277,7 +273,7 @@ var _ = Describe("CR Deployment Handling", func() {
 			})
 			It("should indicate error", func() {
 				Expect(res).To(Equal(false))
-				Expect(err).To(Equal(customerrors.InvalidReferenceUpdate))
+				Expect(err).To(Equal(customerrors.ErrInvalidReferenceUpdate))
 			})
 		})
 	})
@@ -305,11 +301,11 @@ var _ = Describe("CR Deployment Handling", func() {
 		})
 		When("when updating the monitor failed", func() {
 			BeforeEach(func() {
-				mockStatusWriter.EXPECT().Update(gomock.Any(), gomock.Any()).Times(1).Return(consterror.CustomError)
+				mockStatusWriter.EXPECT().Update(gomock.Any(), gomock.Any()).Times(1).Return(consterror.ErrCustomError)
 			})
 			It("should try to requeue with the particular error", func() {
 				Expect(res).To(Equal(reconcile.RequeueOperation()))
-				Expect(err).To(Equal(consterror.CustomError))
+				Expect(err).To(Equal(consterror.ErrCustomError))
 			})
 		})
 		When("when updating the monitor succeeds", func() {
@@ -389,6 +385,70 @@ var _ = Describe("CR Deployment Handling", func() {
 			})
 			It("do nothing and indicate that nothing changed", func() {
 				Expect(res).To(Equal(false))
+			})
+		})
+	})
+
+	Describe("NewMonitorResourceCommon", func() {
+		It("should create a MonitorResourceCommon with correct properties", func() {
+			client := mockClient
+			ctx := context.Background()
+			result := reconcilecommon.NewMonitorResourceCommon(ctx, client)
+
+			Expect(result.Client).To(Equal(client))
+			Expect(result.Ctx).To(Equal(ctx))
+			Expect(result.Comparer).NotTo(BeNil())
+		})
+	})
+
+	Describe("ResourceComparer", func() {
+		var comparer reconcilecommon.ResourceComparer
+
+		Describe("DeepEqual", func() {
+			It("should return true for equal values", func() {
+				result := comparer.DeepEqual("test", "test")
+				Expect(result).To(BeTrue())
+			})
+
+			It("should return false for different values", func() {
+				result := comparer.DeepEqual("test1", "test2")
+				Expect(result).To(BeFalse())
+			})
+
+			It("should return true for equal structs", func() {
+				struct1 := v1alpha1.RouteMonitor{ObjectMeta: metav1.ObjectMeta{Name: "test"}}
+				struct2 := v1alpha1.RouteMonitor{ObjectMeta: metav1.ObjectMeta{Name: "test"}}
+				result := comparer.DeepEqual(struct1, struct2)
+				Expect(result).To(BeTrue())
+			})
+		})
+	})
+
+	Describe("GetOSDClusterID", func() {
+		When("ClusterVersion not found", func() {
+			BeforeEach(func() {
+				get.CalledTimes = 1
+				get.ErrorResponse = consterror.NotFoundErr
+			})
+			It("should return error", func() {
+				result, err := rc.GetOSDClusterID()
+				Expect(err).To(HaveOccurred())
+				Expect(result).To(Equal(""))
+			})
+		})
+	})
+
+	Describe("GetServiceMonitor", func() {
+		When("ServiceMonitor not found", func() {
+			BeforeEach(func() {
+				get.CalledTimes = 1
+				get.ErrorResponse = consterror.NotFoundErr
+			})
+			It("should return error", func() {
+				namespacedName := types.NamespacedName{Name: "test", Namespace: "test"}
+				result, err := rc.GetServiceMonitor(namespacedName)
+				Expect(err).To(HaveOccurred())
+				Expect(result).NotTo(BeNil()) // It returns an empty ServiceMonitor, not nil
 			})
 		})
 	})

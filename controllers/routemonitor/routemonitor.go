@@ -28,26 +28,27 @@ import (
 	"github.com/openshift/route-monitor-operator/pkg/servicemonitor"
 	"github.com/openshift/route-monitor-operator/pkg/util/finalizer"
 	utilreconcile "github.com/openshift/route-monitor-operator/pkg/util/reconcile"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 // RouteMonitorReconciler reconciles a RouteMonitor object
 type RouteMonitorReconciler struct {
-	Client client.Client
-	Ctx    context.Context
-	Log    logr.Logger
-	Scheme *runtime.Scheme
-
+	Client           client.Client
+	Ctx              context.Context
+	Log              logr.Logger
+	Scheme           *runtime.Scheme
 	BlackBoxExporter controllers.BlackBoxExporterHandler
 	ServiceMonitor   controllers.ServiceMonitorHandler
 	Prom             controllers.PrometheusRuleHandler
 	Common           controllers.MonitorResourceHandler
 }
 
-func NewReconciler(mgr manager.Manager, blackboxExporterImage, blackboxExporterNamespace string) *RouteMonitorReconciler {
+func NewReconciler(mgr manager.Manager, blackboxExporterImage, blackboxExporterNamespace string, enablehypershift bool, probeAPIURL string) *RouteMonitorReconciler {
 	log := ctrl.Log.WithName("controllers").WithName("RouteMonitor")
 	client := mgr.GetClient()
 	ctx := context.Background()
@@ -64,13 +65,17 @@ func NewReconciler(mgr manager.Manager, blackboxExporterImage, blackboxExporterN
 }
 
 // +kubebuilder:rbac:groups=*,resources=services,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups=*,resources=configmaps,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;delete;update
+// +kubebuilder:rbac:groups=monitoring.rhobs,resources=servicemonitors,verbs=get;list;watch;create;delete;update
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.openshift.io,resources=routemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.openshift.io,resources=routemonitors/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=operator.openshift.io,resources=ingresscontrollers,verbs=get;list;watch
 // +kubebuilder:rbac:groups=config.openshift.io,resources=clusterversions,verbs=get;list;watch
+// +kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures,verbs=get;list;watch
 
 func (r *RouteMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Ctx = ctx
@@ -79,7 +84,7 @@ func (r *RouteMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	log.V(2).Info("Entering GetRouteMonitor")
 	routeMonitor, res, err := r.GetRouteMonitor(req)
 	if err != nil {
-		log.Error(err, "Failed to retreive RouteMonitor. Requeueing...")
+		log.Error(err, "Failed to retrieve RouteMonitor. Requeueing...")
 		return utilreconcile.RequeueWith(err)
 	}
 	if res.ShouldStop() {
@@ -167,5 +172,9 @@ func (r *RouteMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Request
 func (r *RouteMonitorReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&monitoringv1alpha1.RouteMonitor{}).
+		Watches(
+			&monitoringv1.ServiceMonitor{},
+			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &monitoringv1alpha1.RouteMonitor{}, handler.OnlyControllerOwner()),
+		).
 		Complete(r)
 }

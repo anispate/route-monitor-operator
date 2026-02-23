@@ -10,20 +10,24 @@ import (
 // for example:
 //
 // var (
-// 	getCalledTimes int
-// 	getErrorResponse error
-// )
-// BeforeEach(func() {
-// 	getCalledTimes = 0
-// 	getErrorResponse = nil
-// }
-// JustBeforeEach(func() {
-// 	mockClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).
-// 		Return(getErrorResponse).
-// 		Times(getCalledTimes)
-// }
 //
-// this made the tests full of variables that were used seperately
+//	getCalledTimes int
+//	getErrorResponse error
+//
+// )
+//
+//	BeforeEach(func() {
+//		getCalledTimes = 0
+//		getErrorResponse = nil
+//	}
+//
+//	JustBeforeEach(func() {
+//		mockClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).
+//			Return(getErrorResponse).
+//			Times(getCalledTimes)
+//	}
+//
+// this made the tests full of variables that were used separately
 // by joining them into one struct, a more unified way was introduced
 type MockHelper struct {
 	CalledTimes   int
@@ -39,6 +43,6 @@ func NotFoundErrorHappensOnce() MockHelper {
 func CustomErrorHappensOnce() MockHelper {
 	return MockHelper{
 		CalledTimes:   1,
-		ErrorResponse: consterror.CustomError,
+		ErrorResponse: consterror.ErrCustomError,
 	}
 }

@@ -1,19 +1,16 @@
 package alert_test
 
 import (
-	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"go.uber.org/mock/gomock"
 
 	"context"
 
 	// tested package
-
 	"github.com/openshift/route-monitor-operator/api/v1alpha1"
 	"github.com/openshift/route-monitor-operator/pkg/alert"
 	consterror "github.com/openshift/route-monitor-operator/pkg/consts/test/error"
-	constinit "github.com/openshift/route-monitor-operator/pkg/consts/test/init"
-
 	clientmocks "github.com/openshift/route-monitor-operator/pkg/util/test/generated/mocks/client"
 	utilmock "github.com/openshift/route-monitor-operator/pkg/util/test/generated/mocks/reconcile"
 	testhelper "github.com/openshift/route-monitor-operator/pkg/util/test/helper"
@@ -27,7 +24,6 @@ type ResourceComparerMockHelper struct {
 
 var _ = Describe("CR Deployment Handling", func() {
 	var (
-		ctx                  context.Context
 		mockClient           *clientmocks.MockClient
 		mockCtrl             *gomock.Controller
 		mockResourceComparer *utilmock.MockResourceComparerInterface
@@ -44,7 +40,6 @@ var _ = Describe("CR Deployment Handling", func() {
 		err               error
 	)
 	BeforeEach(func() {
-		ctx = constinit.Context
 		mockCtrl = gomock.NewController(GinkgoT())
 		mockClient = clientmocks.NewMockClient(mockCtrl)
 		mockResourceComparer = utilmock.NewMockResourceComparerInterface(mockCtrl)
@@ -60,7 +55,7 @@ var _ = Describe("CR Deployment Handling", func() {
 
 		pr = alert.PrometheusRule{
 			Client:   mockClient,
-			Ctx:      ctx,
+			Ctx:      context.Background(),
 			Comparer: mockResourceComparer,
 		}
 	})
@@ -99,10 +94,10 @@ var _ = Describe("CR Deployment Handling", func() {
 		})
 		When("the Client failed to fetch existing deployments", func() {
 			BeforeEach(func() {
-				get.ErrorResponse = consterror.CustomError
+				get.ErrorResponse = consterror.ErrCustomError
 			})
 			It("should return the received error", func() {
-				Expect(err).To(Equal(consterror.CustomError))
+				Expect(err).To(Equal(consterror.ErrCustomError))
 			})
 		})
 		Describe("no ServiceMonitor has been deployed yet", func() {
@@ -115,10 +110,10 @@ var _ = Describe("CR Deployment Handling", func() {
 			})
 			When("an error appeared during the creation", func() {
 				BeforeEach(func() {
-					create.ErrorResponse = consterror.CustomError
+					create.ErrorResponse = consterror.ErrCustomError
 				})
 				It("returns the received error", func() {
-					Expect(err).To(Equal(consterror.CustomError))
+					Expect(err).To(Equal(consterror.ErrCustomError))
 				})
 			})
 		})
@@ -136,10 +131,10 @@ var _ = Describe("CR Deployment Handling", func() {
 				})
 				When("the client failed to update the existing deployments", func() {
 					BeforeEach(func() {
-						update.ErrorResponse = consterror.CustomError
+						update.ErrorResponse = consterror.ErrCustomError
 					})
 					It("should return the received error", func() {
-						Expect(err).To(Equal(consterror.CustomError))
+						Expect(err).To(Equal(consterror.ErrCustomError))
 					})
 				})
 			})
@@ -172,10 +167,10 @@ var _ = Describe("CR Deployment Handling", func() {
 			})
 			When("the client failed to fetch the PrometheusRule", func() {
 				BeforeEach(func() {
-					get.ErrorResponse = consterror.CustomError
+					get.ErrorResponse = consterror.ErrCustomError
 				})
 				It("returns the received error", func() {
-					Expect(err).To(Equal(consterror.CustomError))
+					Expect(err).To(Equal(consterror.ErrCustomError))
 				})
 			})
 			When("the PrometheusRule Deployment doesnt exist", func() {
@@ -195,13 +190,25 @@ var _ = Describe("CR Deployment Handling", func() {
 				})
 				When("the client failed to delete the deployment", func() {
 					BeforeEach(func() {
-						delete.ErrorResponse = consterror.CustomError
+						delete.ErrorResponse = consterror.ErrCustomError
 					})
 					It("returns the received error", func() {
-						Expect(err).To(Equal(consterror.CustomError))
+						Expect(err).To(Equal(consterror.ErrCustomError))
 					})
 				})
 			})
+		})
+	})
+
+	Describe("NewPrometheusRule", func() {
+		It("should create a PrometheusRule with correct properties", func() {
+			client := mockClient
+			ctx := context.Background()
+			result := alert.NewPrometheusRule(ctx, client)
+
+			Expect(result.Client).To(Equal(client))
+			Expect(result.Ctx).To(Equal(ctx))
+			Expect(result.Comparer).NotTo(BeNil())
 		})
 	})
 })

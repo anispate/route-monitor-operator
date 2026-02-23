@@ -11,6 +11,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/openshift/route-monitor-operator/api/v1alpha1"
 	integration "github.com/openshift/route-monitor-operator/int"
@@ -38,6 +40,7 @@ var _ = Describe("Integrationtests", func() {
 			expectedServiceMonitorName types.NamespacedName
 		)
 		BeforeEach(func() {
+			logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 			clusterUrlMonitorName = "fake-url-monitor"
 			clusterUrlMonitorNamespace = "default"
 
@@ -119,7 +122,7 @@ var _ = Describe("Integrationtests", func() {
 				err = i.Client.Get(context.TODO(), types.NamespacedName{Namespace: clusterUrlMonitorNamespace, Name: clusterUrlMonitorName}, &updatedClusterUrlMonitor)
 				Expect(err).NotTo(HaveOccurred())
 
-				Expect(updatedClusterUrlMonitor.Status.ErrorStatus).To(Equal(customerrors.InvalidSLO.Error()))
+				Expect(updatedClusterUrlMonitor.Status.ErrorStatus).To(Equal(customerrors.ErrInvalidSLO.Error()))
 			})
 		})
 
@@ -302,7 +305,7 @@ var _ = Describe("Integrationtests", func() {
 				err = i.Client.Get(context.TODO(), types.NamespacedName{Namespace: routeMonitorNamespace, Name: routeMonitorName}, &updatedRouteMonitor)
 				Expect(err).NotTo(HaveOccurred())
 
-				Expect(updatedRouteMonitor.Status.ErrorStatus).To(Equal(customerrors.InvalidSLO.Error()))
+				Expect(updatedRouteMonitor.Status.ErrorStatus).To(Equal(customerrors.ErrInvalidSLO.Error()))
 			})
 		})
 		When("the RouteMonitor does not exist", func() {

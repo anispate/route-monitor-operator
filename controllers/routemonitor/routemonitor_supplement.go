@@ -1,6 +1,7 @@
 package routemonitor
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -10,17 +11,33 @@ import (
 
 	"github.com/openshift/route-monitor-operator/pkg/alert"
 	"github.com/openshift/route-monitor-operator/pkg/consts"
-	"github.com/openshift/route-monitor-operator/pkg/servicemonitor"
 	customerrors "github.com/openshift/route-monitor-operator/pkg/util/errors"
 	utilreconcile "github.com/openshift/route-monitor-operator/pkg/util/reconcile"
 
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Ensures that all PrometheusRules CR are created according to the RouteMonitor
 func (r *RouteMonitorReconciler) EnsurePrometheusRuleExists(routeMonitor v1alpha1.RouteMonitor) (utilreconcile.Result, error) {
+	// If .spec.skipPrometheusRule is true, ensure that the PrometheusRule does NOT exist
+	if routeMonitor.Spec.SkipPrometheusRule {
+		// Cleanup any existing PrometheusRules and update the status
+		if err := r.Prom.DeletePrometheusRuleDeployment(routeMonitor.Status.PrometheusRuleRef); err != nil {
+			return utilreconcile.RequeueReconcileWith(err)
+		}
+		updated, _ := r.Common.SetResourceReference(&routeMonitor.Status.PrometheusRuleRef, types.NamespacedName{})
+		if updated {
+			return r.Common.UpdateMonitorResourceStatus(&routeMonitor)
+		}
+
+		return utilreconcile.ContinueReconcile()
+	}
+
 	parsedSlo, err := r.Common.ParseMonitorSLOSpecs(routeMonitor.Status.RouteURL, routeMonitor.Spec.Slo)
 	if r.Common.SetErrorStatus(&routeMonitor.Status.ErrorStatus, err) {
 		return r.Common.UpdateMonitorResourceStatus(&routeMonitor)
@@ -56,20 +73,34 @@ func (r *RouteMonitorReconciler) EnsurePrometheusRuleExists(routeMonitor v1alpha
 
 // Ensures that a ServiceMonitor is created from the RouteMonitor CR
 func (r *RouteMonitorReconciler) EnsureServiceMonitorExists(routeMonitor v1alpha1.RouteMonitor) (utilreconcile.Result, error) {
-
 	// Was the RouteURL populated by a previous step?
 	if routeMonitor.Status.RouteURL == "" {
-		return utilreconcile.RequeueReconcileWith(customerrors.NoHost)
+		return utilreconcile.RequeueReconcileWith(customerrors.ErrNoHost)
+	}
+
+	var id string
+	var err error
+	useRHOBS := (routeMonitor.Spec.ServiceMonitorType == v1alpha1.ServiceMonitorTypeRHOBS)
+
+	if useRHOBS {
+		hcp, err := r.getHostedControlPlane(routeMonitor.Namespace)
+		if err != nil {
+			return utilreconcile.RequeueReconcileWith(err)
+		}
+		id = hcp.Spec.ClusterID
+	} else {
+		id, err = r.Common.GetOSDClusterID()
+		if err != nil {
+			return utilreconcile.RequeueReconcileWith(err)
+		}
 	}
 
 	// update ServiceMonitor if requiredctrl
 	namespacedName := types.NamespacedName{Name: routeMonitor.Name, Namespace: routeMonitor.Namespace}
-	serviceMonitorTemplate := servicemonitor.TemplateForServiceMonitorResource(routeMonitor.Status.RouteURL, r.BlackBoxExporter.GetBlackBoxExporterNamespace(), namespacedName, r.Common.GetClusterID())
-	err := r.ServiceMonitor.UpdateServiceMonitorDeployment(serviceMonitorTemplate)
-	if err != nil {
+	owner := metav1.NewControllerRef(&routeMonitor.ObjectMeta, routeMonitor.GroupVersionKind())
+	if err := r.ServiceMonitor.TemplateAndUpdateServiceMonitorDeployment(routeMonitor.Status.RouteURL, r.BlackBoxExporter.GetBlackBoxExporterNamespace(), namespacedName, id, useRHOBS, routeMonitor.Spec.InsecureSkipTLSVerify, owner); err != nil {
 		return utilreconcile.RequeueReconcileWith(err)
 	}
-
 	// update ServiceMonitorRef if required
 	updated, err := r.Common.SetResourceReference(&routeMonitor.Status.ServiceMonitorRef, namespacedName)
 	if err != nil {
@@ -100,8 +131,8 @@ func (r *RouteMonitorReconciler) EnsureMonitorAndDependenciesAbsent(routeMonitor
 	}
 
 	log.V(2).Info("Entering ensureServiceMonitorResourceAbsent")
-	err = r.ServiceMonitor.DeleteServiceMonitorDeployment(routeMonitor.Status.ServiceMonitorRef)
-	if err != nil {
+	isHCP := false
+	if err = r.ServiceMonitor.DeleteServiceMonitorDeployment(routeMonitor.Status.ServiceMonitorRef, isHCP); err != nil {
 		return utilreconcile.RequeueReconcileWith(err)
 	}
 
@@ -160,7 +191,7 @@ func (r *RouteMonitorReconciler) GetRoute(routeMonitor v1alpha1.RouteMonitor) (r
 		Namespace: routeMonitor.Spec.Route.Namespace,
 	}
 	if nsName.Name == "" || nsName.Namespace == "" {
-		err := errors.New("Invalid CR: Cannot retrieve route if one of the fields is empty")
+		err := errors.New("invalid CR: Cannot retrieve route if one of the fields is empty")
 		return res, err
 	}
 
@@ -172,7 +203,7 @@ func (r *RouteMonitorReconciler) GetRoute(routeMonitor v1alpha1.RouteMonitor) (r
 func (r *RouteMonitorReconciler) EnsureRouteURLExists(route routev1.Route, routeMonitor v1alpha1.RouteMonitor) (utilreconcile.Result, error) {
 	amountOfIngress := len(route.Status.Ingress)
 	if amountOfIngress == 0 {
-		err := errors.New("No Ingress: cannot extract route url from the Route resource")
+		err := errors.New("no Ingress: cannot extract route url from the Route resource")
 		return utilreconcile.RequeueReconcileWith(err)
 	}
 	extractedRouteURL := route.Status.Ingress[0].Host
@@ -181,7 +212,14 @@ func (r *RouteMonitorReconciler) EnsureRouteURLExists(route routev1.Route, route
 	}
 
 	if extractedRouteURL == "" {
-		return utilreconcile.RequeueReconcileWith(customerrors.NoHost)
+		return utilreconcile.RequeueReconcileWith(customerrors.ErrNoHost)
+	}
+
+	if routeMonitor.Spec.Route.Port != 0 {
+		extractedRouteURL = fmt.Sprintf("%s:%d", extractedRouteURL, routeMonitor.Spec.Route.Port)
+	}
+	if routeMonitor.Spec.Route.Suffix != "" {
+		extractedRouteURL = fmt.Sprintf("%s%s", extractedRouteURL, routeMonitor.Spec.Route.Suffix)
 	}
 
 	currentRouteURL := routeMonitor.Status.RouteURL
@@ -201,4 +239,18 @@ func (r *RouteMonitorReconciler) EnsureRouteURLExists(route routev1.Route, route
 
 	routeMonitor.Status.RouteURL = extractedRouteURL
 	return r.Common.UpdateMonitorResourceStatus(&routeMonitor)
+}
+
+// getHostedControlPlane retrieves the HostedControlPlane object from the provided namespace. It's expected that only a single HCP object is present in the namespace,
+// if multiple are found, an error is returned instead.
+func (r *RouteMonitorReconciler) getHostedControlPlane(namespace string) (hypershiftv1beta1.HostedControlPlane, error) {
+	hcpList := hypershiftv1beta1.HostedControlPlaneList{}
+	err := r.Client.List(context.TODO(), &hcpList, client.InNamespace(namespace))
+	if err != nil {
+		return hypershiftv1beta1.HostedControlPlane{}, fmt.Errorf("failed to retrieve HostedControlPlanes in namespace '%s': %w", namespace, err)
+	}
+	if len(hcpList.Items) != 1 {
+		return hypershiftv1beta1.HostedControlPlane{}, fmt.Errorf("unexpected number of HostedControlPlane objects in namespace '%s': expected 1, got %d", namespace, len(hcpList.Items))
+	}
+	return hcpList.Items[0], nil
 }

@@ -1,24 +1,16 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://help.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
-
+# BEGIN boilerplate-managed
 version: 2
 updates:
-  - package-ecosystem: "docker" 
-    directory: "/"
+  - package-ecosystem: "docker"
+    directory: "/build"
+    labels:
+      - "area/dependency"
+      - "ok-to-test"
     schedule:
-      interval: "daily"
-  - package-ecosystem: "docker" # to update the ./hack/pipeline.dockerfile image
-    directory: "/hack" 
-    schedule:
-      interval: "daily"
-  - package-ecosystem: "github-actions" 
-    directory: "/"
-    schedule:
-      interval: "daily"
-  - package-ecosystem: "gomod" 
-    directory: "/" 
-    vendor: true
-    schedule:
-      interval: "daily"
+      interval: "weekly"
+    ignore:
+      - dependency-name: "redhat-services-prod/openshift/boilerplate"
+        # don't upgrade boilerplate via these means
+      - dependency-name: "openshift4/ose-operator-registry"
+        # don't upgrade ose-operator-registry via these means
+# END boilerplate-managed

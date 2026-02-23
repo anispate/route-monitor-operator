@@ -61,6 +61,7 @@ function buildImage {
 }
 
 function verifyForBuildSuccess {
+  sleep 300
   local latestJobName phase
   latestJobName="$IMAGE_NAME"-$( oc -n "$NAMESPACE" get buildconfig "$IMAGE_NAME" -ojsonpath='{.status.lastVersion}') 
   phase=$(oc -n "$NAMESPACE" get build "$latestJobName" -ojsonpath='{.status.phase}')
@@ -75,7 +76,7 @@ function verifyForBuildSuccess {
 
 function deployOperator {
   echo -e "\n\nDEPLOYING OPERATOR\n\n"
-  oc delete deployment "route-monitor-operator-controller-manager" -n "$NAMESPACE" || true
+  oc delete deployment "route-monitor-operator-controller-manager" -n "$NAMESPACE" --ignore-not-found
 
   # Override namespace in all objects
   cp -r config{,.bak}
